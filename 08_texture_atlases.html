@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Texture atlases</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            font-family: sans-serif;
+            padding: 0 1em;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        .canvas {
+            border: 1px solid rgba(0, 0, 0, 0.5);
+        }
+    </style>
+
+    <script>
+        const VERTEX_SHADER_SOURCE = `#version 300 es
+
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+
+out vec2 vTexCoord;
+
+void main() {
+    gl_Position = aPosition;
+    vTexCoord = aTexCoord;
+}`;
+
+        const FRAGMENT_SHADER_SOURCE = `#version 300 es
+
+precision mediump float;
+
+uniform sampler2D uSampler;
+
+in vec2 vTexCoord;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(uSampler, vTexCoord);
+}`;
+
+        /** @type {HTMLCanvasElement} */
+        let canvas;
+
+        /** @type {WebGL2RenderingContext} */
+        let gl;
+
+        /** @type {WebGLProgram} */
+        let program;
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        async function init() {
+            canvas = document.getElementById('canvas');
+
+            if (canvas === null)
+                throw new Error('#canvas not found');
+
+            if (!(canvas instanceof HTMLCanvasElement))
+                throw new Error('#canvas is not a HTMLCanvasElement');
+
+            gl = canvas.getContext('webgl2');
+
+            program = gl.createProgram();
+
+            const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vertexShader, VERTEX_SHADER_SOURCE);
+            gl.compileShader(vertexShader);
+            gl.attachShader(program, vertexShader);
+
+            const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fragmentShader, FRAGMENT_SHADER_SOURCE);
+            gl.compileShader(fragmentShader);
+            gl.attachShader(program, fragmentShader);
+
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.log(gl.getShaderInfoLog(vertexShader));
+                console.log(gl.getShaderInfoLog(fragmentShader));
+            }
+
+            const positionData = new Float32Array([
+                -1, 0,
+                0, 1,
+                -1, 1,
+                -1, 0,
+                0, 0,
+                0, 1,
+
+                0, 0,
+                1, 1,
+                0, 1,
+                0, 0,
+                1, 0,
+                1, 1,
+
+                -1, -1,
+                0, 0,
+                -1, 0,
+                -1, -1,
+                0, -1,
+                0, 0,
+
+                0, -1,
+                1, 0,
+                0, 0,
+                0, -1,
+                1, -1,
+                1, 0,
+            ]);
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, positionData, gl.STATIC_DRAW);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(0);
+
+            const texCoordData = new Float32Array(1024);
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, texCoordData.byteLength, gl.DYNAMIC_DRAW);
+            gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(1);
+
+            const image = await loadAtlas();
+            const lookupUV = await createUVLookup();
+            texCoordData.set(lookupUV('medievalTile_03'), 0);
+            texCoordData.set(lookupUV('medievalTile_17'), 12);
+            texCoordData.set(lookupUV('medievalTile_05'), 24);
+            texCoordData.set(lookupUV('medievalTile_07'), 36);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, texCoordData);
+
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 2048, 0, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            gl.generateMipmap(gl.TEXTURE_2D);
+
+            requestAnimationFrame(draw);
+        }
+
+        function loadAtlas() {
+            return new Promise(resolve => {
+                const image = new Image();
+                image.src = './assets/atlas.png';
+                image.addEventListener('load', () => resolve(image));
+            });
+        }
+
+        async function createUVLookup() {
+            const file = await fetch('./assets/atlas.json');
+            const data = await file.json();
+
+            const w = 128 / 1024;
+            const h = 128 / 2048;
+
+            const hPadding = 0.25 / 1024;
+            const vPadding = 0.25 / 2048;
+
+            return name => {
+                if (!data[name])
+                    return null;
+
+                const [u, v] = data[name];
+
+                return [
+                    u + hPadding, v - vPadding + h,
+                    u - hPadding + w, v + vPadding,
+                    u + hPadding, v + vPadding,
+
+                    u + hPadding, v - vPadding + h,
+                    u - hPadding + w, v - vPadding + h,
+                    u - hPadding + w, v + vPadding,
+                ];
+            }
+        }
+
+        function draw(timestamp) {
+            gl.useProgram(program);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 24);
+
+            requestAnimationFrame(draw);
+        }
+    </script>
+</head>
+
+<body>
+    <h1>Texture atlases</h1>
+
+    <canvas class="canvas" id="canvas" width="800" height="600"></canvas>
+
+    <p>
+        <a href="./index.html">Index</a>
+    </p>
+</body>
+
+</html>

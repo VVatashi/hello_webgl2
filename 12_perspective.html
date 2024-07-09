@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Perspective</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            font-family: sans-serif;
+            padding: 0 1em;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        .canvas {
+            border: 1px solid rgba(0, 0, 0, 0.5);
+        }
+    </style>
+
+    <script src="./gl-matrix.js"></script>
+    <script>
+        const { mat4 } = glMatrix;
+
+        const VERTEX_SHADER_SOURCE = `#version 300 es
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec4 aColor;
+
+out vec4 vColor;
+
+void main() {
+    gl_Position = uProjection * uView * uModel * aPosition;
+    vColor = aColor;
+}`;
+
+        const FRAGMENT_SHADER_SOURCE = `#version 300 es
+
+precision mediump float;
+
+in vec4 vColor;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = vColor;
+}`;
+
+        /** @type {HTMLCanvasElement} */
+        let canvas;
+
+        /** @type {WebGL2RenderingContext} */
+        let gl;
+
+        /** @type {WebGLProgram} */
+        let program;
+
+        let uModelLoc;
+
+        let model;
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        function init() {
+            canvas = document.getElementById('canvas');
+
+            if (canvas === null)
+                throw new Error('#canvas not found');
+
+            if (!(canvas instanceof HTMLCanvasElement))
+                throw new Error('#canvas is not a HTMLCanvasElement');
+
+            gl = canvas.getContext('webgl2');
+
+            program = gl.createProgram();
+
+            const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vertexShader, VERTEX_SHADER_SOURCE);
+            gl.compileShader(vertexShader);
+            gl.attachShader(program, vertexShader);
+
+            const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fragmentShader, FRAGMENT_SHADER_SOURCE);
+            gl.compileShader(fragmentShader);
+            gl.attachShader(program, fragmentShader);
+
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.log(gl.getShaderInfoLog(vertexShader));
+                console.log(gl.getShaderInfoLog(fragmentShader));
+            }
+
+            const vertexData = new Float32Array([
+                -.5, -.5, -.5, 0, 1, 1,
+                -.5, .5, .5, 0, 1, 1,
+                -.5, .5, -.5, 0, 1, 1,
+                -.5, -.5, .5, 0, 1, 1,
+                -.5, .5, .5, 0, 1, 1,
+                -.5, -.5, -.5, 0, 1, 1,
+
+                .5, -.5, -.5, 1, 0, 1,
+                .5, .5, -.5, 1, 0, 1,
+                .5, .5, .5, 1, 0, 1,
+                .5, .5, .5, 1, 0, 1,
+                .5, -.5, .5, 1, 0, 1,
+                .5, -.5, -.5, 1, 0, 1,
+
+                -.5, -.5, -.5, 0, 1, 0,
+                .5, -.5, -.5, 0, 1, 0,
+                .5, -.5, .5, 0, 1, 0,
+                .5, -.5, .5, 0, 1, 0,
+                -.5, -.5, .5, 0, 1, 0,
+                -.5, -.5, -.5, 0, 1, 0,
+
+                -.5, .5, -.5, 1, 1, 0,
+                .5, .5, .5, 1, 1, 0,
+                .5, .5, -.5, 1, 1, 0,
+                -.5, .5, .5, 1, 1, 0,
+                .5, .5, .5, 1, 1, 0,
+                -.5, .5, -.5, 1, 1, 0,
+
+                .5, -.5, -.5, 0, 0, 1,
+                -.5, -.5, -.5, 0, 0, 1,
+                .5, .5, -.5, 0, 0, 1,
+                -.5, .5, -.5, 0, 0, 1,
+                .5, .5, -.5, 0, 0, 1,
+                -.5, -.5, -.5, 0, 0, 1,
+
+                -.5, -.5, .5, 1, 0, 0,
+                .5, -.5, .5, 1, 0, 0,
+                .5, .5, .5, 1, 0, 0,
+                .5, .5, .5, 1, 0, 0,
+                -.5, .5, .5, 1, 0, 0,
+                -.5, -.5, .5, 1, 0, 0,
+            ]);
+
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+            gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 6 * 4, 0);
+            gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 6 * 4, 3 * 4);
+
+            gl.enableVertexAttribArray(0);
+            gl.enableVertexAttribArray(1);
+
+            uModelLoc = gl.getUniformLocation(program, 'uModel');
+            const uViewLoc = gl.getUniformLocation(program, 'uView');
+            const uProjectionLoc = gl.getUniformLocation(program, 'uProjection');
+
+            model = mat4.create();
+            const view = mat4.create();
+            const projection = mat4.create();
+
+            mat4.rotateZ(model, model, 0.1);
+            mat4.scale(model, model, [0.8, 0.8, 0.8]);
+
+            mat4.lookAt(view, [0.6, 0.6, 0.6], [0, 0, 0], [0, 1, 0]);
+
+            // mat4.ortho(projection, -2, 2, -2, 2, -2, 2);
+            mat4.perspective(projection, Math.PI / 2, gl.canvas.width / gl.canvas.height, 0.1, 10.0);
+
+            gl.useProgram(program);
+            gl.uniformMatrix4fv(uModelLoc, false, model);
+            gl.uniformMatrix4fv(uViewLoc, false, view);
+            gl.uniformMatrix4fv(uProjectionLoc, false, projection);
+
+            gl.enable(gl.DEPTH_TEST);
+
+            requestAnimationFrame(draw);
+        }
+
+        function draw(timestamp) {
+            gl.useProgram(program);
+            mat4.rotate(model, model, 0.02, [1, 1, 0]);
+            gl.uniformMatrix4fv(uModelLoc, false, model);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 36);
+
+            requestAnimationFrame(draw);
+        }
+    </script>
+</head>
+
+<body>
+    <h1>Perspective</h1>
+
+    <canvas class="canvas" id="canvas" width="800" height="600"></canvas>
+
+    <p>
+        <a href="./index.html">Index</a>
+    </p>
+</body>
+
+</html>

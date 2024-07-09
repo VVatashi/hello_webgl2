@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Hello world</title>
+    <title>Transparency</title>
 
     <style>
         * {
@@ -31,19 +31,26 @@
     <script>
         const VERTEX_SHADER_SOURCE = `#version 300 es
 
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec4 aColor;
+
+out vec4 vColor;
+
 void main() {
-    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-    gl_PointSize = 150.0;
+    gl_Position = aPosition;
+    vColor = aColor;
 }`;
 
         const FRAGMENT_SHADER_SOURCE = `#version 300 es
 
 precision mediump float;
 
+in vec4 vColor;
+
 out vec4 fragColor;
 
 void main() {
-    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    fragColor = vColor;
 }`;
 
         /** @type {HTMLCanvasElement} */
@@ -87,13 +94,52 @@ void main() {
                 console.log(gl.getShaderInfoLog(fragmentShader));
             }
 
+            const vertexData = new Float32Array([
+                -0.5, -0.5, 0.5, 1, 0, 0, 0.5,
+                0.5, 0, 0.5, 1, 0, 0, 0.5,
+                -0.5, 0.5, 0.5, 1, 0, 0, 0.5,
+
+                -0.5, -0.5, -0.5, 0, 0, 1, 0.5,
+                0, 0.5, -0.5, 0, 0, 1, 0.5,
+                0.5, -0.5, -0.5, 0, 0, 1, 0.5,
+
+                0.5, -0.5, 0.0, 0, 1, 0, 0.5,
+                -0.5, 0.0, 0.0, 0, 1, 0, 0.5,
+                0.5, 0.5, 0.0, 0, 1, 0, 0.5,
+            ]);
+
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+            gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 7 * 4, 0);
+            gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
+
+            gl.enableVertexAttribArray(0);
+            gl.enableVertexAttribArray(1);
+
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LEQUAL);
+
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
             requestAnimationFrame(draw);
         }
 
         function draw(timestamp) {
             gl.useProgram(program);
 
-            gl.drawArrays(gl.POINTS, 0, 1);
+            gl.depthMask(false);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            gl.drawArrays(gl.TRIANGLES, 6, 3);
+            gl.drawArrays(gl.TRIANGLES, 3, 3);
+
+            gl.depthMask(true);
 
             requestAnimationFrame(draw);
         }
@@ -101,7 +147,7 @@ void main() {
 </head>
 
 <body>
-    <h1>Hello world</h1>
+    <h1>Transparency</h1>
 
     <canvas class="canvas" id="canvas" width="800" height="600"></canvas>
 

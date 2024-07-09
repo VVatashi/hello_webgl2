@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Hello world</title>
+    <title>Element arrays</title>
 
     <style>
         * {
@@ -31,19 +31,26 @@
     <script>
         const VERTEX_SHADER_SOURCE = `#version 300 es
 
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec4 aColor;
+
+out vec4 vColor;
+
 void main() {
-    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-    gl_PointSize = 150.0;
+    vColor = aColor;
+    gl_Position = aPosition;
 }`;
 
         const FRAGMENT_SHADER_SOURCE = `#version 300 es
 
 precision mediump float;
 
+in vec4 vColor;
+
 out vec4 fragColor;
 
 void main() {
-    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    fragColor = vColor;
 }`;
 
         /** @type {HTMLCanvasElement} */
@@ -87,13 +94,43 @@ void main() {
                 console.log(gl.getShaderInfoLog(fragmentShader));
             }
 
+            const elementVertexdata = new Float32Array([
+                0, 0,
+                0, 1,
+                0.95, 0.3,
+                0.58, -0.8,
+                -0.58, -0.8,
+                -0.95, 0.3,
+            ]);
+
+            const elementIndexData = new Uint8Array([
+                0, 1, 2,
+                0, 2, 3,
+                0, 3, 4,
+                0, 4, 5,
+                0, 5, 1,
+            ]);
+
+            const arrayVertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, arrayVertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, elementVertexdata, gl.STATIC_DRAW);
+
+            const elementVertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementVertexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, elementIndexData, gl.STATIC_DRAW);
+
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+            gl.vertexAttrib4f(1, 1, 0, 0, 1);
+
+            gl.enableVertexAttribArray(0);
+
             requestAnimationFrame(draw);
         }
 
         function draw(timestamp) {
             gl.useProgram(program);
 
-            gl.drawArrays(gl.POINTS, 0, 1);
+            gl.drawElements(gl.TRIANGLES, 15, gl.UNSIGNED_BYTE, 0);
 
             requestAnimationFrame(draw);
         }
@@ -101,7 +138,7 @@ void main() {
 </head>
 
 <body>
-    <h1>Hello world</h1>
+    <h1>Element arrays</h1>
 
     <canvas class="canvas" id="canvas" width="800" height="600"></canvas>
 
