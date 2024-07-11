@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Model loading</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            font-family: sans-serif;
+            padding: 0 1em;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        .canvas {
+            border: 1px solid rgba(0, 0, 0, 0.5);
+        }
+    </style>
+
+    <script src="./gl-matrix.js"></script>
+    <script>
+        const { mat4, vec3 } = glMatrix;
+
+        const VERTEX_SHADER_SOURCE = `#version 300 es
+
+uniform mat4 uModelMatrix;
+
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec3 aNormal;
+
+vec3 normal = vec3(0.0, 0.0, -1.0);
+
+out vec3 vNormal;
+
+void main() {
+    gl_Position = uModelMatrix * aPosition;
+    vNormal = aNormal;
+}`;
+
+        const FRAGMENT_SHADER_SOURCE = `#version 300 es
+
+precision mediump float;
+
+uniform vec3 uLightDirection;
+uniform mat4 uInverseTranspose;
+
+in vec3 vNormal;
+
+out vec4 fragColor;
+
+vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
+
+void main() {
+    float brightness = max(dot(uLightDirection, normalize(mat3(uInverseTranspose) * vNormal)), 0.0);
+    fragColor = color * 0.2 + color * brightness * 0.8;
+    fragColor.a = 1.0;
+}`;
+
+        /** @type {HTMLCanvasElement} */
+        let canvas;
+
+        /** @type {WebGL2RenderingContext} */
+        let gl;
+
+        /** @type {WebGLProgram} */
+        let program;
+
+        let lightDirectionLoc;
+        let lightDirection;
+
+        let modelMatrixLoc;
+        let inverseTransposeLoc;
+
+        let modelMatrix;
+        let inverseTranspose;
+
+        let bufferData;
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        function loadObjModel(data) {
+            const result = [];
+            const vertices = [];
+            const texCoords = [];
+            const normals = [];
+            const lines = data.split('\n');
+            for (const line of lines) {
+                const [command, ...values] = line.trim().split(' ');
+                if (command === 'v') {
+                    vertices.push(values.map(Number.parseFloat));
+                } else if (command === 'vt') {
+                    texCoords.push(values.map(Number.parseFloat));
+                } else if (command === 'vn') {
+                    normals.push(values.map(Number.parseFloat));
+                } else if (command === 'f') {
+                    const groupIndexes = values.length === 3
+                        ? [0, 1, 2]
+                        : (values.length === 4
+                            ? [0, 1, 2, 0, 2, 3]
+                            : []);
+
+                    for (const groupIndex of groupIndexes) {
+                        const [vertexIndex, texCoordIndex, normalIndex] = values[groupIndex].split('/');
+                        result.push(...vertices[vertexIndex - 1]);
+                        result.push(...normals[normalIndex - 1]);
+                        result.push(...texCoords[texCoordIndex - 1]);
+                    }
+                }
+            }
+
+            return new Float32Array(result);
+        }
+
+        async function init() {
+            canvas = document.getElementById('canvas');
+
+            if (canvas === null)
+                throw new Error('#canvas not found');
+
+            if (!(canvas instanceof HTMLCanvasElement))
+                throw new Error('#canvas is not a HTMLCanvasElement');
+
+            gl = canvas.getContext('webgl2');
+
+            program = gl.createProgram();
+
+            const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vertexShader, VERTEX_SHADER_SOURCE);
+            gl.compileShader(vertexShader);
+            gl.attachShader(program, vertexShader);
+
+            const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fragmentShader, FRAGMENT_SHADER_SOURCE);
+            gl.compileShader(fragmentShader);
+            gl.attachShader(program, fragmentShader);
+
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.log(gl.getShaderInfoLog(vertexShader));
+                console.log(gl.getShaderInfoLog(fragmentShader));
+            }
+
+            lightDirectionLoc = gl.getUniformLocation(program, 'uLightDirection');
+            lightDirection = vec3.fromValues(1, 1, 1);
+            vec3.normalize(lightDirection, lightDirection);
+
+            modelMatrixLoc = gl.getUniformLocation(program, 'uModelMatrix');
+            inverseTransposeLoc = gl.getUniformLocation(program, 'uInverseTranspose');
+
+            modelMatrix = mat4.create();
+            mat4.translate(modelMatrix, modelMatrix, [0, -0.75, 0]);
+            mat4.scale(modelMatrix, modelMatrix, [0.25, 0.5, 0.25]);
+
+            inverseTranspose = mat4.create();
+
+            const response = await fetch('./assets/teapot.obj');
+            const data = await response.text();
+            bufferData = await loadObjModel(data);
+
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, bufferData, gl.STATIC_DRAW);
+
+            gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 3 * 4 + 3 * 4 + 2 * 4, 0);
+            gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 3 * 4 + 3 * 4 + 2 * 4, 3 * 4);
+            gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 3 * 4 + 3 * 4 + 2 * 4, 3 * 4 + 3 * 4);
+
+            gl.enableVertexAttribArray(0);
+            gl.enableVertexAttribArray(1);
+            gl.enableVertexAttribArray(2);
+
+            gl.enable(gl.CULL_FACE);
+            gl.cullFace(gl.BACK);
+            gl.frontFace(gl.CW);
+
+            gl.enable(gl.DEPTH_TEST);
+
+            requestAnimationFrame(draw);
+        }
+
+        function draw(timestamp) {
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(program);
+
+            vec3.rotateY(lightDirection, lightDirection, [0, 0, 0], 0.05);
+            vec3.normalize(lightDirection, lightDirection);
+
+            gl.uniform3fv(lightDirectionLoc, lightDirection);
+
+            mat4.rotateY(modelMatrix, modelMatrix, 0.01);
+            gl.uniformMatrix4fv(modelMatrixLoc, false, modelMatrix);
+
+            mat4.invert(inverseTranspose, modelMatrix);
+            mat4.transpose(inverseTranspose, inverseTranspose);
+            gl.uniformMatrix4fv(inverseTransposeLoc, false, inverseTranspose);
+
+            gl.drawArrays(gl.TRIANGLES, 0, bufferData.byteLength / (3 * 4 + 3 * 4 + 2 * 4));
+
+            requestAnimationFrame(draw);
+        }
+    </script>
+</head>
+
+<body>
+    <h1>Model loading</h1>
+
+    <canvas class="canvas" id="canvas" width="800" height="600"></canvas>
+
+    <p>
+        <a href="./index.html">Index</a>
+    </p>
+</body>
+
+</html>
